@@ -1,161 +1,137 @@
-import sys
-
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
-from django import forms
 from django.urls import reverse
 
-import sqlite3
-
-from app.connection import ConnectionCategoriaDataBase
-
-
-# formulario utilizado para edicao de registros de categorias
-class CategoriaForm(forms.Form):
-    id = forms.IntegerField(label='ID', widget=forms.TextInput(attrs={'readonly': 'readonly'}), required=False)
-    descricao = forms.CharField(label='Descrição', max_length=30, required=True)
-
-# Método responsavel por listar, incluir, alterar e excluir as Categorias.
-connectionCategoria = ConnectionCategoriaDataBase.connectar
+from app.forms import CategoriaForm, ProdutoForm
+from app.services import CategoriaService, ProdutoService
 
 
-
-
-# formulario utilizado para edicao de registros de produtos
-class ProdutoForm(forms.Form):
-    id = forms.IntegerField(label='ID', widget=forms.TextInput(attrs={'readonly': 'readonly'}), required=False)
-    descricao = forms.CharField(label='Descrição', max_length=30, required=True)
-    preco_unitario = forms.DecimalField(label='Preço Unitário', max_digits=10, decimal_places=2, required=True)
-    quantidade_estoque = forms.IntegerField(label='Qtd. Estoque', required=True)
-    categoria_id = forms.ChoiceField(label='Categoria', required=True)
-
-    # construtor do Formulario
-    def __init__(self, *args, **kwargs):
-            # chama construtor da classe-Pai
-            super().__init__(*args, **kwargs)
-            # obtem a conexao com o banco de dados
-            conexao = sqlite3.connect('db_solid.sqlite3')
-            # obtem os registros da tabela Departamentos
-            categorias = conexao.cursor().execute('SELECT id, descricao FROM Categoria ORDER BY descricao').fetchall()
-            # carrega as categorias no <select> da página usando o ChoiceField
-            self.fields['categoria_id'].choices = categorias
-
-
-# Método responsavel por listar, incluir, alterar e excluir os Produtos.
-def produtos(request, acao=None, id=None):
+# Método responsável por listar, incluir, alterar e excluir as Categorias.
+def categorias(request, acao=None, id=None):
     '''
-    Método responsavel por receber todas as rotas URL do cadastro de Produtos.
+    Método responsável por receber todas as rotas URL do cadastro de Categorias.
     
-    De acordo com a "acao" e o "id" informados, esse metodo irá:
-      - 'produtos/': Exibir a pagina de listagem
-      - 'produtos/incluir/': Exibir a pagina de inclusão
-      - 'produtos/alterar/<:id>/': Exibir a pagina de alteração
-      - 'produtos/excluir/<:id>/': Exibir a pagina de exclusão
-      - 'produtos/salvar/': insere, altera ou exclui um registro
+    De acordo com a "acao" e o "id" informados, esse método irá:
+      - 'categorias/': Exibir a página de listagem
+      - 'categorias/incluir/': Exibir a página de inclusão
+      - 'categorias/alterar/<:id>/': Exibir a página de alteração
+      - 'categorias/excluir/<:id>/': Exibir a página de exclusão
+      - 'categorias/salvar/': insere, altera ou exclui um registro
     '''
+    
+    service = CategoriaService()
 
     try:
-        # obtem a conexao com o banco de dados
-        conexao = sqlite3.connect('db_solid.sqlite3')
-        # comando para não permitir DELETE CASCADE (exclusão em cascata)
-        conexao.execute("PRAGMA foreign_keys = ON;") 
-
         # Listar registros
-        # 'produtos/': Exibir a pagina de listagem
         if acao is None:
-            # define o comando SQL que será executado
-            sql = '''
-                SELECT  pro.id,
-                        pro.descricao, 
-                        pro.preco_unitario,
-                        pro.quantidade_estoque,
-                        pro.categoria_id,
-                        cat.descricao as 'categoria'
-                        
-                FROM Produto pro
-                INNER JOIN Categoria cat ON cat.id = pro.categoria_id
-
-                ORDER BY pro.descricao
-            '''
-            
-            # cria um cursor(), executa o SELECT informado e traz os todos os registros
-            registros = conexao.cursor().execute(sql).fetchall()
-
-            # define a pagina a ser carregada, adicionando os registros das tabelas 
-            return render(request, 'produtos_listar.html', context={'registros': registros})
+            registros = service.listar_categorias()
+            return render(request, 'categorias_listar.html', context={'registros': registros})
         
         # Salvar registro
-        # 'produtos/salvar/': insere, altera ou exclui um registro
         elif acao == 'salvar':
             form_data = request.POST
             acao_form = form_data['acao']
 
-            if acao_form == 'Inclusão':
-                sql = f'''
-                            INSERT INTO Produto (
-                                descricao, 
-                                preco_unitario, 
-                                quantidade_estoque, 
-                                categoria_id
-                            )
-                            VALUES(
-                                '{form_data['descricao']}', 
-                                {form_data['preco_unitario']}, 
-                                {form_data['quantidade_estoque']}, 
-                                {form_data['categoria_id']}
-                            );
-                '''
+            try:
+                if acao_form == 'Inclusão':
+                    service.criar_categoria(descricao=form_data['descricao'])
 
-            elif acao_form == 'Exclusão':
-                sql = f"DELETE FROM Produto WHERE id = {form_data['id']}"
+                elif acao_form == 'Exclusão':
+                    service.deletar_categoria(int(form_data['id']))
 
-            else:
-                sql = f'''
-                    UPDATE Produto 
-                    SET descricao = '{form_data['descricao']}', 
-                        preco_unitario = {form_data['preco_unitario']}, 
-                        quantidade_estoque = {form_data['quantidade_estoque']}, 
-                        categoria_id = {form_data['categoria_id']} 
-                    WHERE id = {form_data['id']}
-                '''
+                else:  # Alteração
+                    service.atualizar_categoria(
+                        id=int(form_data['id']),
+                        descricao=form_data['descricao']
+                    )
 
-            # cria um cursor() e executa o SQL informado
-            conexao.cursor().execute(sql)
-            conexao.commit()
-
-            # Sempre retornar um HttpResponseRedirect após processar dados "POST". 
-            # Isso evita que os dados sejam postados 2 vezes caso usuário clicar "Voltar".
-            return HttpResponseRedirect( reverse("produtos") )
+                return HttpResponseRedirect(reverse("categorias"))
+            
+            except ValueError as err:
+                return render(request, 'home.html', context={'ERRO': str(err)})
         
-        # inserir registro
-        # 'produtos/incluir/': Exibir a pagina de inclusão
+        # Inserir registro
         elif acao == 'incluir':
-            return render(request, 'produtos_editar.html',
-                           context={'acao': 'Inclusão', 'form': ProdutoForm() })
+            return render(request, 'categorias_editar.html',
+                         context={'acao': 'Inclusão', 'form': CategoriaForm()})
         
         # Alterar ou excluir registro
-        # 'produtos/alterar/<:id>/': Exibir a pagina de alteração
-        # 'produtos/excluir/<:id>/': Exibir a pagina de exclusão
         elif acao in ['alterar', 'excluir']:
-            # seleciona o registro pelo id informado
-            sql = f'''
-                SELECT  pro.id,
-                        pro.descricao, 
-                        pro.preco_unitario,
-                        pro.quantidade_estoque,
-                        pro.categoria_id,
-                        cat.descricao as 'categoria'
-                        
-                FROM Produto pro
-                INNER JOIN Categoria cat ON cat.id = pro.categoria_id
+            categoria = service.obter_categoria(id)
+            categoria_dict = {'id': categoria[0], 'descricao': categoria[1]}
 
-                WHERE pro.id={id}    
-            '''
+            acao_display = 'Alteração' if acao == 'alterar' else 'Exclusão'
 
-            # cria um cursor(), executa o SELECT para retornar o registro pelo ID
-            registro = conexao.cursor().execute(sql).fetchone()
+            return render(request, 'categorias_editar.html',
+                         context={'acao': acao_display, 'form': CategoriaForm(initial=categoria_dict)})
+        
+        # Ação inválida
+        else:
+            raise ValueError('Ação inválida')
+
+    except Exception as err:
+        return render(request, 'home.html', context={'ERRO': str(err)})
+def produtos(request, acao=None, id=None):
+    '''
+    Método responsável por receber todas as rotas URL do cadastro de Produtos.
+    
+    De acordo com a "acao" e o "id" informados, esse método irá:
+      - 'produtos/': Exibir a página de listagem
+      - 'produtos/incluir/': Exibir a página de inclusão
+      - 'produtos/alterar/<:id>/': Exibir a página de alteração
+      - 'produtos/excluir/<:id>/': Exibir a página de exclusão
+      - 'produtos/salvar/': insere, altera ou exclui um registro
+    '''
+    
+    service = ProdutoService()
+
+    try:
+        # Listar registros
+        if acao is None:
+            registros = service.listar_produtos()
+            return render(request, 'produtos_listar.html', context={'registros': registros})
+        
+        # Salvar registro
+        elif acao == 'salvar':
+            form_data = request.POST
+            acao_form = form_data['acao']
+
+            try:
+                if acao_form == 'Inclusão':
+                    service.criar_produto(
+                        descricao=form_data['descricao'],
+                        preco_unitario=float(form_data['preco_unitario']),
+                        quantidade_estoque=int(form_data['quantidade_estoque']),
+                        categoria_id=int(form_data['categoria_id'])
+                    )
+
+                elif acao_form == 'Exclusão':
+                    service.deletar_produto(int(form_data['id']))
+
+                else:  # Alteração
+                    service.atualizar_produto(
+                        id=int(form_data['id']),
+                        descricao=form_data['descricao'],
+                        preco_unitario=float(form_data['preco_unitario']),
+                        quantidade_estoque=int(form_data['quantidade_estoque']),
+                        categoria_id=int(form_data['categoria_id'])
+                    )
+
+                return HttpResponseRedirect(reverse("produtos"))
+            
+            except (ValueError, Exception) as err:
+                return render(request, 'home.html', context={'ERRO': str(err)})
+        
+        # Inserir registro
+        elif acao == 'incluir':
+            return render(request, 'produtos_editar.html',
+                         context={'acao': 'Inclusão', 'form': ProdutoForm()})
+        
+        # Alterar ou excluir registro
+        elif acao in ['alterar', 'excluir']:
+            registro = service.obter_produto(id)
             registro_dict = {
-                'id': registro[0], 
+                'id': registro[0],
                 'descricao': registro[1],
                 'preco_unitario': registro[2],
                 'quantidade_estoque': registro[3],
@@ -163,18 +139,17 @@ def produtos(request, acao=None, id=None):
                 'categoria': registro[5],
             }
 
-            acao = 'Alteração' if acao == 'alterar' else 'Exclusão'
+            acao_display = 'Alteração' if acao == 'alterar' else 'Exclusão'
 
-            return render(request, 'produtos_editar.html', 
-                           context={'acao': acao, 'form': ProdutoForm(initial=registro_dict) })
+            return render(request, 'produtos_editar.html',
+                         context={'acao': acao_display, 'form': ProdutoForm(initial=registro_dict)})
         
-        # acao INVALIDA
+        # Ação inválida
         else:
-            raise Exception('Ação inválida')
+            raise ValueError('Ação inválida')
 
-    # se ocorreu algunm erro, insere a mensagem para ser exibida no contexto da página 
     except Exception as err:
-        return render(request, 'home.html', context={'ERRO': err})
+        return render(request, 'home.html', context={'ERRO': str(err)})
 
 
 # Exibe a página inicial da aplicação

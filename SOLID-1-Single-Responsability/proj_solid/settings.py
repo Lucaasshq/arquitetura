@@ -25,7 +25,21 @@ SECRET_KEY = 'django-insecure-hau*zu17man4c91nx5tp@pbehi5rsq@xn6m31u&-4@%4d!0#$u
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
+
+# CSRF and CORS settings for development
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'https://localhost:8000',
+    'https://127.0.0.1:8000',
+    'https://*.github.dev',  # GitHub Codespace
+    'https://*.githubpreview.dev',  # Alternativa
+]
+
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_HTTPONLY = False
+SESSION_COOKIE_SECURE = False
 
 
 # Application definition
